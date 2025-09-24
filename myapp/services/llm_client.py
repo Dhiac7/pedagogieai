@@ -1,7 +1,10 @@
+import os
 import requests
 from typing import Dict, Any
 
-DEFAULT_OLLAMA_URL = 'http://localhost:11434/api/generate'
+# Allow overriding the Ollama endpoint via environment variable
+# Example: OLLAMA_URL=http://remote-host:11434/api/generate
+DEFAULT_OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/generate')
 
 
 def generate_with_model(prompt: str, model_name: str = 'mistral', params: Dict[str, Any] | None = None) -> str:

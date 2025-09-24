@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -18,136 +18,117 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-
-const mockQuestions = [
-  {
-    id: 1,
-    texte: "Quel est le résultat de 5 + 7 ?",
-    format: "quiz",
-    difficulte: "easy",
-    niveau: "CP",
-    thematique: "Calcul mental",
-    competence: "Addition simple",
-    sous_competence: "Addition jusqu'à 10",
-    statut: "validated",
-    created_at: "2024-01-15",
-    source: "generated",
-  },
-  {
-    id: 2,
-    texte: 'Vrai ou Faux: Le verbe "être" se conjugue "je suis" à la première personne du singulier.',
-    format: "true-false",
-    difficulte: "medium",
-    niveau: "CE1",
-    thematique: "Grammaire",
-    competence: "Reconnaissance des verbes",
-    sous_competence: "Verbes d'action",
-    statut: "validated",
-    created_at: "2024-01-14",
-    source: "generated",
-  },
-  {
-    id: 3,
-    texte: "Expliquez comment lire un mot de 4 lettres.",
-    format: "question",
-    difficulte: "easy",
-    niveau: "CP",
-    thematique: "Lecture",
-    competence: "Lecture de mots simples",
-    sous_competence: "",
-    statut: "draft",
-    created_at: "2024-01-13",
-    source: "manual",
-  },
-]
-
-const statusOptions = [
-  { value: "all", label: "Tous les statuts" },
-  { value: "draft", label: "Brouillon" },
-  { value: "generated", label: "Générée" },
-  { value: "validated", label: "Validée" },
-  { value: "archived", label: "Archivée" },
-]
+import { api, Question, Reponse, Competence, Thematique } from "@/lib/api"
 
 export default function QuestionsDashboard() {
   const [showAddDialog, setShowAddDialog] = useState(false)
-  const [filterStatus, setFilterStatus] = useState("all")
+  const [loading, setLoading] = useState(false)
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [competences, setCompetences] = useState<Competence[]>([])
+  const [thematiques, setThematiques] = useState<Thematique[]>([])
+  
+  // Form states
+  const [formData, setFormData] = useState({
+    description: "",
+    type: "",
+    reponses: [] as Array<{ description: string; valide: boolean }>
+  })
 
-  const filteredQuestions =
-    filterStatus === "all" ? mockQuestions : mockQuestions.filter((q) => q.statut === filterStatus)
+  // Load data on component mount
+  useEffect(() => {
+    loadData()
+  }, [])
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "validated":
-        return "bg-green-100 text-green-800"
-      case "generated":
-        return "bg-blue-100 text-blue-800"
-      case "draft":
-        return "bg-yellow-100 text-yellow-800"
-      case "archived":
-        return "bg-gray-100 text-gray-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [questionsResponse, competencesResponse, thematiquesResponse] = await Promise.all([
+        api.getQuestions(),
+        api.getCompetences(),
+        api.getThematiques()
+      ])
+
+      if (questionsResponse.data) setQuestions(questionsResponse.data)
+      if (competencesResponse.data) setCompetences(competencesResponse.data)
+      if (thematiquesResponse.data) setThematiques(thematiquesResponse.data)
+    } catch (error) {
+      console.error("Error loading data:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case "Facile":
-        return "bg-green-100 text-green-800"
-      case "Moyen":
-        return "bg-yellow-100 text-yellow-800"
-      case "Difficile":
-        return "bg-red-100 text-red-800"
-      case "easy":
-        return "bg-green-100 text-green-800"
-      case "medium":
-        return "bg-yellow-100 text-yellow-800"
-      case "hard":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+  const handleSubmit = async () => {
+    setLoading(true)
+    try {
+      const response = await api.createQuestion({
+        description: formData.description,
+        type: formData.type
+      })
+
+      if (response.data) {
+        // Create responses for the question
+        for (const reponse of formData.reponses) {
+          await api.createReponse({
+            description: reponse.description,
+            valide: reponse.valide,
+            id_question: response.data.id
+          })
+        }
+
+        // Reset form
+        setFormData({
+          description: "",
+          type: "",
+          reponses: []
+        })
+        setShowAddDialog(false)
+        // Reload data
+        loadData()
+      }
+    } catch (error) {
+      console.error("Error creating question:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const getStatusLabel = (status: string) => {
-    const option = statusOptions.find((opt) => opt.value === status)
-    return option ? option.label : status
+  const addReponse = () => {
+    setFormData({
+      ...formData,
+      reponses: [...formData.reponses, { description: "", valide: false }]
+    })
   }
 
-  const getFormatLabel = (format: string) => {
-    switch (format) {
-      case "quiz":
-        return "Quiz (QCM)"
-      case "true-false":
+  const updateReponse = (index: number, field: string, value: any) => {
+    const newReponses = [...formData.reponses]
+    newReponses[index] = { ...newReponses[index], [field]: value }
+    setFormData({ ...formData, reponses: newReponses })
+  }
+
+  const removeReponse = (index: number) => {
+    const newReponses = formData.reponses.filter((_, i) => i !== index)
+    setFormData({ ...formData, reponses: newReponses })
+  }
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case "qcm":
+        return "QCM"
+      case "vrai-faux":
         return "Vrai/Faux"
       case "question":
         return "Question ouverte"
-      case "QCM":
-        return "Quiz (QCM)"
-      case "texte":
-        return "Question ouverte"
+      case "calcul":
+        return "Calcul"
+      case "conjugaison":
+        return "Conjugaison"
+      case "equation":
+        return "Équation"
+      case "formule":
+        return "Formule"
       default:
-        return format
-    }
-  }
-
-  const getDifficultyLabel = (difficulty: string) => {
-    switch (difficulty) {
-      case "easy":
-        return "Facile"
-      case "medium":
-        return "Moyen"
-      case "hard":
-        return "Difficile"
-      case "Facile":
-        return "Facile"
-      case "Moyen":
-        return "Moyen"
-      case "Difficile":
-        return "Difficile"
-      default:
-        return difficulty
+        return type
     }
   }
 
@@ -160,28 +141,10 @@ export default function QuestionsDashboard() {
         </div>
       </div>
 
-      {/* Filters and Actions */}
+      {/* Actions */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                <Label>Statut:</Label>
-              </div>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {statusOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex justify-end">
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button>
@@ -189,79 +152,83 @@ export default function QuestionsDashboard() {
                   Nouvelle Question
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl">
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Nouvelle Question</DialogTitle>
-                  <DialogDescription>Créez une nouvelle question pédagogique</DialogDescription>
+                  <DialogDescription>Créez une nouvelle question pédagogique avec ses réponses</DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="question">Question</Label>
-                    <Textarea id="question" placeholder="Entrez votre question..." rows={3} />
+                    <Label htmlFor="description">Question</Label>
+                    <Textarea 
+                      id="description" 
+                      placeholder="Entrez votre question..." 
+                      rows={3}
+                      value={formData.description}
+                      onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="format">Format</Label>
-                      <Select>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="QCM">QCM</SelectItem>
-                          <SelectItem value="vrai-faux">Vrai/Faux</SelectItem>
-                          <SelectItem value="texte">Texte libre</SelectItem>
-                          <SelectItem value="numerique">Numérique</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="difficulte">Difficulté</Label>
-                      <Select>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="facile">Facile</SelectItem>
-                          <SelectItem value="moyen">Moyen</SelectItem>
-                          <SelectItem value="difficile">Difficile</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="type">Type de question</Label>
+                    <Select value={formData.type} onValueChange={(value) => setFormData({...formData, type: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner le type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="qcm">QCM</SelectItem>
+                        <SelectItem value="vrai-faux">Vrai/Faux</SelectItem>
+                        <SelectItem value="question">Question ouverte</SelectItem>
+                        <SelectItem value="calcul">Calcul</SelectItem>
+                        <SelectItem value="conjugaison">Conjugaison</SelectItem>
+                        <SelectItem value="equation">Équation</SelectItem>
+                        <SelectItem value="formule">Formule</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="competence">Compétence</Label>
-                      <Select>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="addition">Additionner des nombres</SelectItem>
-                          <SelectItem value="conjugaison">Conjugaison</SelectItem>
-                          <SelectItem value="geographie">Géographie</SelectItem>
-                        </SelectContent>
-                      </Select>
+                  
+                  {/* Réponses */}
+                  <div className="grid gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Réponses</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={addReponse}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Ajouter une réponse
+                      </Button>
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="sous-competence">Sous-compétence</Label>
-                      <Select>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="addition-20">Additionner jusqu'à 20</SelectItem>
-                          <SelectItem value="present">Présent de l'indicatif</SelectItem>
-                          <SelectItem value="capitales">Capitales européennes</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {formData.reponses.map((reponse, index) => (
+                      <div key={index} className="flex items-center gap-2 p-3 border rounded-lg">
+                        <input
+                          type="checkbox"
+                          checked={reponse.valide}
+                          onChange={(e) => updateReponse(index, "valide", e.target.checked)}
+                          className="h-4 w-4"
+                        />
+                        <Textarea
+                          placeholder="Description de la réponse..."
+                          value={reponse.description}
+                          onChange={(e) => updateReponse(index, "description", e.target.value)}
+                          rows={1}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeReponse(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowAddDialog(false)}>
                     Annuler
                   </Button>
-                  <Button onClick={() => setShowAddDialog(false)}>Créer la question</Button>
+                  <Button onClick={handleSubmit} disabled={loading || !formData.description || !formData.type}>
+                    {loading ? "Création..." : "Créer la question"}
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -272,77 +239,63 @@ export default function QuestionsDashboard() {
       {/* Questions List */}
       <Card>
         <CardHeader>
-          <CardTitle>Questions ({filteredQuestions.length})</CardTitle>
+          <CardTitle>Questions ({questions.length})</CardTitle>
           <CardDescription>Liste de toutes vos questions pédagogiques</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Question</TableHead>
-                <TableHead>Format</TableHead>
-                <TableHead>Difficulté</TableHead>
-                <TableHead>Niveau</TableHead>
-                <TableHead>Thématique</TableHead>
-                <TableHead>Compétence</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredQuestions.map((question) => (
-                <TableRow key={question.id}>
-                  <TableCell className="max-w-xs">
-                    <div className="truncate font-medium">{question.texte}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{getFormatLabel(question.format)}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getDifficultyColor(question.difficulte)}>
-                      {getDifficultyLabel(question.difficulte)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{question.niveau}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{question.thematique}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <div className="font-medium">{question.competence}</div>
-                      {question.sous_competence && (
-                        <div className="text-muted-foreground text-xs">{question.sous_competence}</div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={question.source === "generated" ? "default" : "secondary"}>
-                      {question.source === "generated" ? "IA" : "Manuel"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(question.statut)}>{getStatusLabel(question.statut)}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-muted-foreground">Chargement...</div>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Question</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Réponses</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {questions.map((question) => (
+                  <TableRow key={question.id}>
+                    <TableCell>#{question.id}</TableCell>
+                    <TableCell className="max-w-md">
+                      <div className="truncate font-medium">{question.description}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{getTypeLabel(question.type)}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {question.reponses?.length || 0} réponse(s)
+                        {question.reponses && question.reponses.length > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            {question.reponses.filter(r => r.valide).length} correcte(s)
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

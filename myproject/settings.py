@@ -83,26 +83,16 @@ WSGI_APPLICATION = 'myproject.wsgi.application'
 
 
 # Database (PostgreSQL)
-# Configure via env vars if needed. Defaults target a local Postgres instance.
+# Configure via environment variables; falls back to local defaults
 DATABASES = {
-
     'default': {
-
-
         'ENGINE': 'django.db.backends.postgresql',
-
-        'NAME': 'pedagogieai',
-
-        'USER': 'postgres',
-
-        'PASSWORD': 'dhia',
-
-        'HOST': 'localhost',
-
-        'PORT': '5432',
-
+        'NAME': os.getenv('POSTGRES_DB', 'pedagogieai'),
+        'USER': os.getenv('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'dhia'),
+        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
+        'PORT': os.getenv('POSTGRES_PORT', '5432'),
     }
-
 }
 
 # Force psycopg2 to handle encoding properly

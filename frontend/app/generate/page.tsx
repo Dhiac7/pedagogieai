@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Bot, Save, RefreshCw, Edit, CheckCircle, AlertCircle } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { api, GeneratedResult, Niveau, Thematique, Competence, SousCompetence } from "@/lib/api"
 
 interface GeneratedQuestion {
   id: number
@@ -23,55 +24,15 @@ interface GeneratedQuestion {
   saved: boolean
 }
 
-// Mock hierarchical data
-const mockNiveaux = [
-  { id: 1, nom: "CP" },
-  { id: 2, nom: "CE1" },
-  { id: 3, nom: "CE2" },
-  { id: 4, nom: "CM1" },
-  { id: 5, nom: "CM2" },
-]
-
-const mockThematiques = [
-  { id: 1, nom: "Calcul mental", niveau_id: 1, niveau_nom: "CP" },
-  { id: 2, nom: "Grammaire", niveau_id: 2, niveau_nom: "CE1" },
-  { id: 3, nom: "Lecture", niveau_id: 1, niveau_nom: "CP" },
-  { id: 4, nom: "Géométrie", niveau_id: 3, niveau_nom: "CE2" },
-]
-
-const mockCompetences = [
-  { id: 1, nom: "Addition simple", thematique_id: 1, thematique_nom: "Calcul mental", niveau_nom: "CP" },
-  { id: 2, nom: "Reconnaissance des verbes", thematique_id: 2, thematique_nom: "Grammaire", niveau_nom: "CE1" },
-  { id: 3, nom: "Lecture de mots simples", thematique_id: 3, thematique_nom: "Lecture", niveau_nom: "CP" },
-]
-
-const mockSousCompetences = [
-  {
-    id: 1,
-    nom: "Addition jusqu'à 5",
-    competence_id: 1,
-    competence_nom: "Addition simple",
-    thematique_nom: "Calcul mental",
-  },
-  {
-    id: 2,
-    nom: "Addition jusqu'à 10",
-    competence_id: 1,
-    competence_nom: "Addition simple",
-    thematique_nom: "Calcul mental",
-  },
-  {
-    id: 3,
-    nom: "Verbes d'action",
-    competence_id: 2,
-    competence_nom: "Reconnaissance des verbes",
-    thematique_nom: "Grammaire",
-  },
-]
+// Data from API
 
 export default function GeneratePage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([])
+  const [niveaux, setNiveaux] = useState<Niveau[]>([])
+  const [thematiques, setThematiques] = useState<Thematique[]>([])
+  const [competences, setCompetences] = useState<Competence[]>([])
+  const [sousCompetences, setSousCompetences] = useState<SousCompetence[]>([])
   const [formData, setFormData] = useState({
     niveau_id: "",
     thematique_id: "",
@@ -80,36 +41,58 @@ export default function GeneratePage() {
     format: "",
     difficulte: "",
   })
+  const [advanced, setAdvanced] = useState({ max_new_tokens: 160, temperature: 0.7, top_p: 0.9 })
 
   // Filtered data based on selections
-  const [filteredThematiques, setFilteredThematiques] = useState(mockThematiques)
-  const [filteredCompetences, setFilteredCompetences] = useState(mockCompetences)
-  const [filteredSousCompetences, setFilteredSousCompetences] = useState(mockSousCompetences)
+  const [filteredThematiques, setFilteredThematiques] = useState<Thematique[]>([])
+  const [filteredCompetences, setFilteredCompetences] = useState<Competence[]>([])
+  const [filteredSousCompetences, setFilteredSousCompetences] = useState<SousCompetence[]>([])
+
+  // Load base data on mount
+  useEffect(() => {
+    const load = async () => {
+      const [{ data: n }, { data: t }, { data: c }, { data: sc }] = await Promise.all([
+        api.getNiveaux(),
+        api.getThematiques(),
+        api.getCompetences(),
+        api.getSousCompetences(),
+      ])
+      setNiveaux(n || [])
+      setThematiques(t || [])
+      setCompetences(c || [])
+      setSousCompetences(sc || [])
+      setFilteredThematiques(t || [])
+      setFilteredCompetences(c || [])
+      setFilteredSousCompetences(sc || [])
+    }
+    load()
+  }, [])
 
   // Update filtered data when selections change
   useEffect(() => {
     if (formData.niveau_id) {
-      const filtered = mockThematiques.filter((t) => t.niveau_id.toString() === formData.niveau_id)
+      // Filter thematiques by matiere of niveau if applicable. If no relation, leave unchanged.
+      const filtered = thematiques
       setFilteredThematiques(filtered)
       setFormData((prev) => ({ ...prev, thematique_id: "", competence_id: "", sous_competence_id: "" }))
     }
-  }, [formData.niveau_id])
+  }, [formData.niveau_id, thematiques])
 
   useEffect(() => {
     if (formData.thematique_id) {
-      const filtered = mockCompetences.filter((c) => c.thematique_id.toString() === formData.thematique_id)
+      const filtered = competences.filter((c) => c.id_thematique.toString() === formData.thematique_id)
       setFilteredCompetences(filtered)
       setFormData((prev) => ({ ...prev, competence_id: "", sous_competence_id: "" }))
     }
-  }, [formData.thematique_id])
+  }, [formData.thematique_id, competences])
 
   useEffect(() => {
     if (formData.competence_id) {
-      const filtered = mockSousCompetences.filter((sc) => sc.competence_id.toString() === formData.competence_id)
+      const filtered = sousCompetences.filter((sc) => sc.id_competence.toString() === formData.competence_id)
       setFilteredSousCompetences(filtered)
       setFormData((prev) => ({ ...prev, sous_competence_id: "" }))
     }
-  }, [formData.competence_id])
+  }, [formData.competence_id, sousCompetences])
 
   const handleGenerate = async () => {
     if (
@@ -124,61 +107,70 @@ export default function GeneratePage() {
     }
 
     setIsGenerating(true)
+    const payload = {
+      niveau_id: Number(formData.niveau_id),
+      thematique_id: Number(formData.thematique_id),
+      competence_id: Number(formData.competence_id),
+      sous_competence_id: formData.sous_competence_id ? Number(formData.sous_competence_id) : undefined,
+      format: formData.format as 'quiz' | 'true-false' | 'question',
+      difficulte: formData.difficulte as 'easy' | 'medium' | 'hard',
+    }
 
-    // Get selected items for display
-    const niveau = mockNiveaux.find((n) => n.id.toString() === formData.niveau_id)
-    const thematique = filteredThematiques.find((t) => t.id.toString() === formData.thematique_id)
-    const competence = filteredCompetences.find((c) => c.id.toString() === formData.competence_id)
-    const sousCompetence = formData.sous_competence_id
-      ? filteredSousCompetences.find((sc) => sc.id.toString() === formData.sous_competence_id)
-      : null
+    const { data, error } = await api.generateQuestion(payload)
+    setIsGenerating(false)
+    if (error || !data) {
+      alert(error || 'Erreur lors de la génération')
+      return
+    }
 
-    // Simulate API call with different question types
-    setTimeout(() => {
-      const questionTemplates = {
-        quiz: [
-          `Quelle est la réponse correcte pour cette ${competence?.nom.toLowerCase()} ?`,
-          `Parmi ces options, laquelle correspond à ${competence?.nom.toLowerCase()} ?`,
-          `Choisissez la bonne réponse concernant ${competence?.nom.toLowerCase()} :`,
-        ],
-        "true-false": [
-          `Vrai ou Faux: Cette affirmation sur ${competence?.nom.toLowerCase()} est correcte.`,
-          `Est-ce que cette règle de ${competence?.nom.toLowerCase()} est vraie ?`,
-          `Cette proposition concernant ${competence?.nom.toLowerCase()} est-elle exacte ?`,
-        ],
-        question: [
-          `Expliquez comment appliquer ${competence?.nom.toLowerCase()}.`,
-          `Décrivez le processus de ${competence?.nom.toLowerCase()}.`,
-          `Donnez un exemple de ${competence?.nom.toLowerCase()}.`,
-        ],
-      }
+    const res: GeneratedResult = data
+    const newQuestion: GeneratedQuestion = {
+      id: res.question.id,
+      texte: res.question.description,
+      format: res.question.type,
+      difficulte: res.meta.difficulte,
+      niveau: res.meta.niveau,
+      thematique: res.meta.thematique,
+      competence: res.meta.competence,
+      sous_competence: res.meta.sous_competence || "",
+      generated_at: new Date().toLocaleString(),
+      saved: true,
+    }
+    setGeneratedQuestions((prev) => [newQuestion, ...prev])
+  }
 
-      const templates =
-        questionTemplates[formData.format as keyof typeof questionTemplates] || questionTemplates.question
-      const randomTemplate = templates[Math.floor(Math.random() * templates.length)]
-
-      const newQuestion: GeneratedQuestion = {
-        id: Date.now(),
-        texte: randomTemplate,
-        format: formData.format,
-        difficulte: formData.difficulte,
-        niveau: niveau?.nom || "",
-        thematique: thematique?.nom || "",
-        competence: competence?.nom || "",
-        sous_competence: sousCompetence?.nom || "",
-        generated_at: new Date().toLocaleString(),
-        saved: false,
-      }
-
-      setGeneratedQuestions((prev) => [newQuestion, ...prev])
-
-      // Auto-save after 1 second
-      setTimeout(() => {
-        setGeneratedQuestions((prev) => prev.map((q) => (q.id === newQuestion.id ? { ...q, saved: true } : q)))
-      }, 1000)
-
-      setIsGenerating(false)
-    }, 2000)
+  const handleGenerateLocal = async () => {
+    setIsGenerating(true)
+    const topic = [formData.niveau_id && `Niveau=${niveaux.find(n=>n.id.toString()===formData.niveau_id)?.nom}`,
+                   formData.thematique_id && `Thématique=${thematiques.find(t=>t.id.toString()===formData.thematique_id)?.nom}`,
+                   formData.competence_id && `Compétence=${competences.find(c=>c.id.toString()===formData.competence_id)?.description}`,
+                  ].filter(Boolean).join(" | ")
+    const prompt = `Tu es un expert en pédagogie. Génère exactement UNE question claire (une seule ligne) se terminant par un point d'interrogation. Thème: ${topic}. Ne renvoie que la question, sans préface ni options.`
+    const res = await api.generateLocal({
+      prompt,
+      max_new_tokens: advanced.max_new_tokens,
+      temperature: advanced.temperature,
+      top_p: advanced.top_p,
+    })
+    setIsGenerating(false)
+    if (res.error || !res.data) {
+      alert(res.error || 'Erreur lors de la génération locale')
+      return
+    }
+    const text = res.data.text
+    const newQuestion: GeneratedQuestion = {
+      id: Date.now(),
+      texte: text,
+      format: formData.format || 'quiz',
+      difficulte: formData.difficulte || 'medium',
+      niveau: niveaux.find(n=>n.id.toString()===formData.niveau_id)?.nom || '',
+      thematique: thematiques.find(t=>t.id.toString()===formData.thematique_id)?.nom || '',
+      competence: competences.find(c=>c.id.toString()===formData.competence_id)?.description || '',
+      sous_competence: sousCompetences.find(s=>s.id.toString()===formData.sous_competence_id)?.description || "",
+      generated_at: new Date().toLocaleString(),
+      saved: false,
+    }
+    setGeneratedQuestions((prev) => [newQuestion, ...prev])
   }
 
   const handleManualSave = (questionId: number) => {
@@ -266,7 +258,7 @@ export default function GeneratePage() {
                   <SelectValue placeholder="Sélectionner un niveau" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockNiveaux.map((niveau) => (
+                  {niveaux.map((niveau) => (
                     <SelectItem key={niveau.id} value={niveau.id.toString()}>
                       {niveau.nom}
                     </SelectItem>
@@ -310,7 +302,7 @@ export default function GeneratePage() {
                 <SelectContent>
                   {filteredCompetences.map((competence) => (
                     <SelectItem key={competence.id} value={competence.id.toString()}>
-                      {competence.nom}
+                      {competence.description}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -331,7 +323,7 @@ export default function GeneratePage() {
                 <SelectContent>
                   {filteredSousCompetences.map((sousCompetence) => (
                     <SelectItem key={sousCompetence.id} value={sousCompetence.id.toString()}>
-                      {sousCompetence.nom}
+                      {sousCompetence.description}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -373,6 +365,45 @@ export default function GeneratePage() {
               </Select>
             </div>
 
+            {/* Local LLM advanced params */}
+            <div className="grid grid-cols-3 gap-3 pt-2">
+              <div>
+                <Label>Max tokens</Label>
+                <input
+                  type="number"
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  min={16}
+                  max={512}
+                  value={advanced.max_new_tokens}
+                  onChange={(e)=>setAdvanced({...advanced, max_new_tokens: Number(e.target.value)})}
+                />
+              </div>
+              <div>
+                <Label>Temperature</Label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={1.5}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  value={advanced.temperature}
+                  onChange={(e)=>setAdvanced({...advanced, temperature: Number(e.target.value)})}
+                />
+              </div>
+              <div>
+                <Label>Top-p</Label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min={0}
+                  max={1}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  value={advanced.top_p}
+                  onChange={(e)=>setAdvanced({...advanced, top_p: Number(e.target.value)})}
+                />
+              </div>
+            </div>
+
             <Button onClick={handleGenerate} disabled={isGenerating} className="w-full" size="lg">
               {isGenerating ? (
                 <>
@@ -383,6 +414,20 @@ export default function GeneratePage() {
                 <>
                   <Bot className="mr-2 h-4 w-4" />
                   Générer la question
+                </>
+              )}
+            </Button>
+
+            <Button onClick={handleGenerateLocal} disabled={isGenerating} className="w-full mt-2" variant="outline">
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Génération locale...
+                </>
+              ) : (
+                <>
+                  <Bot className="mr-2 h-4 w-4" />
+                  Générer via LLM local
                 </>
               )}
             </Button>

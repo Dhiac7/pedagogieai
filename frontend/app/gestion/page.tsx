@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Edit, Trash2, BookOpen, Tag, Target, Search, Save } from "lucide-react"
+import { Plus, Edit, Trash2, BookOpen, Tag, Target, Search, Save, Book } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Dialog,
@@ -23,6 +23,7 @@ import { api, type Niveau as NiveauType, type Thematique as ThematiqueType, type
 
 const tabs = [
   { id: "niveaux", label: "Niveaux", icon: BookOpen },
+  { id: "matieres", label: "Matières", icon: Book },
   { id: "thematiques", label: "Thématiques", icon: Tag },
   { id: "competences", label: "Compétences", icon: Target },
   { id: "sous-competences", label: "Sous-Compétences", icon: Search },
@@ -101,29 +102,28 @@ export default function GestionDashboard() {
     switch (activeTab) {
       case "niveaux":
         return niveaux.map((n) => ({ id: n.id, nom: n.nom, description: "" }))
+      case "matieres":
+        return matieres.map((m) => ({ id: m.id, nom: m.nom, description: "" }))
       case "thematiques":
         return thematiques.map((t) => ({
           id: t.id,
           nom: t.nom,
-          matiere_nom: matiereIdToNom.get(t.matiere) || String(t.matiere),
+          matiere_nom: matiereIdToNom.get(t.id_matiere) || String(t.id_matiere),
         }))
       case "competences":
         return competences.map((c) => ({
           id: c.id,
-          nom: c.titre,
           description: c.description,
-          thematique_nom: thematiqueIdToNom.get(c.thematique) || String(c.thematique),
-          niveau_nom: niveauIdToNom.get(c.niveau) || String(c.niveau),
+          thematique_nom: thematiqueIdToNom.get(c.id_thematique) || String(c.id_thematique),
         }))
       case "sous-competences":
         return sousCompetences.map((sc) => {
-          const comp = competenceIdToObj.get(sc.competence)
-          const themNom = comp ? (thematiqueIdToNom.get(comp.thematique) || String(comp.thematique)) : ""
+          const comp = competenceIdToObj.get(sc.id_competence)
+          const themNom = comp ? (thematiqueIdToNom.get(comp.id_thematique) || String(comp.id_thematique)) : ""
           return {
             id: sc.id,
-            nom: sc.titre,
             description: sc.description,
-            competence_nom: comp ? comp.titre : String(sc.competence),
+            competence_nom: comp ? comp.description.substring(0, 30) + "..." : String(sc.id_competence),
             thematique_nom: themNom,
           }
         })
@@ -141,22 +141,278 @@ export default function GestionDashboard() {
 
   const handleEdit = (item: any) => {
     setEditingItem(item)
-    setFormData(item)
+    
+    // Prepare form data for editing, ensuring proper field mapping
+    const editFormData = { ...item }
+    
+    // For thematiques, ensure id_matiere is properly set
+    if (activeTab === "thematiques" && item.matiere_nom) {
+      const matiere = matieres.find(m => m.nom === item.matiere_nom)
+      if (matiere) {
+        editFormData.id_matiere = matiere.id
+      }
+    }
+    
+    // For competences, ensure id_thematique is properly set
+    if (activeTab === "competences" && item.thematique_nom) {
+      const thematique = thematiques.find(t => t.nom === item.thematique_nom)
+      if (thematique) {
+        editFormData.id_thematique = thematique.id
+      }
+    }
+    
+    // For sous-competences, ensure id_competence is properly set
+    if (activeTab === "sous-competences" && item.competence_nom) {
+      const competence = competences.find(c => c.description === item.competence_nom)
+      if (competence) {
+        editFormData.id_competence = competence.id
+      }
+    }
+    
+    setFormData(editFormData)
     setShowAddDialog(true)
   }
 
-  const handleSave = () => {
-    console.log("Saving:", activeTab, formData)
-    // Here you would typically save to your backend
-    setShowAddDialog(false)
-    setFormData({})
-    setEditingItem(null)
+  const handleSave = async () => {
+    // Enhanced form validation
+    const validationErrors: string[] = []
+    
+    if (activeTab === "thematiques") {
+      if (!formData.nom || formData.nom.trim().length === 0) {
+        validationErrors.push("Le nom de la thématique est obligatoire")
+      }
+      if (!formData.id_matiere || isNaN(Number(formData.id_matiere))) {
+        validationErrors.push("Veuillez sélectionner une matière valide")
+      }
+    }
+    
+    if (activeTab === "competences") {
+      if (!formData.description || formData.description.trim().length === 0) {
+        validationErrors.push("La description de la compétence est obligatoire")
+      }
+      if (!formData.id_thematique || isNaN(Number(formData.id_thematique))) {
+        validationErrors.push("Veuillez sélectionner une thématique valide")
+      }
+    }
+    
+    if (activeTab === "sous-competences") {
+      if (!formData.description || formData.description.trim().length === 0) {
+        validationErrors.push("La description de la sous-compétence est obligatoire")
+      }
+      if (!formData.id_competence || isNaN(Number(formData.id_competence))) {
+        validationErrors.push("Veuillez sélectionner une compétence valide")
+      }
+    }
+    
+    if (validationErrors.length > 0) {
+      alert("Erreurs de validation:\n" + validationErrors.join("\n"))
+      return
+    }
+
+    setLoading(true)
+    try {
+      // Prepare clean data for API call
+      const cleanFormData = { ...formData }
+      
+      // Remove display-only fields that shouldn't be sent to API
+      delete cleanFormData.matiere_nom
+      delete cleanFormData.thematique_nom
+      delete cleanFormData.competence_nom
+      
+      // Ensure numeric IDs are properly converted
+      if (cleanFormData.id_matiere) {
+        cleanFormData.id_matiere = Number(cleanFormData.id_matiere)
+      }
+      if (cleanFormData.id_thematique) {
+        cleanFormData.id_thematique = Number(cleanFormData.id_thematique)
+      }
+      if (cleanFormData.id_competence) {
+        cleanFormData.id_competence = Number(cleanFormData.id_competence)
+      }
+      
+      // Trim string fields
+      if (cleanFormData.nom) {
+        cleanFormData.nom = cleanFormData.nom.trim()
+      }
+      if (cleanFormData.description) {
+        cleanFormData.description = cleanFormData.description.trim()
+      }
+      
+      let response
+      switch (activeTab) {
+        case "niveaux":
+          if (editingItem) {
+            response = await api.updateNiveau(editingItem.id, cleanFormData)
+          } else {
+            response = await api.createNiveau(cleanFormData)
+          }
+          break
+        case "matieres":
+          if (editingItem) {
+            response = await api.updateMatiere(editingItem.id, cleanFormData)
+          } else {
+            response = await api.createMatiere(cleanFormData)
+          }
+          break
+        case "thematiques":
+          if (editingItem) {
+            response = await api.updateThematique(editingItem.id, cleanFormData)
+          } else {
+            response = await api.createThematique(cleanFormData)
+          }
+          break
+        case "competences":
+          if (editingItem) {
+            response = await api.updateCompetence(editingItem.id, cleanFormData)
+          } else {
+            response = await api.createCompetence(cleanFormData)
+          }
+          break
+        case "sous-competences":
+          if (editingItem) {
+            response = await api.updateSousCompetence(editingItem.id, cleanFormData)
+          } else {
+            response = await api.createSousCompetence(cleanFormData)
+          }
+          break
+        default:
+          console.log("Saving:", activeTab, cleanFormData)
+          break
+      }
+      
+      if (response?.data || response?.error === undefined) {
+        // Reload data after successful save
+        try {
+          const [niv, mat, thm, cmp, sc] = await Promise.all([
+            api.getNiveaux(),
+            api.getMatieres(),
+            api.getThematiques(),
+            api.getCompetences(),
+            api.getSousCompetences(),
+          ])
+          
+          // Check if any reload failed
+          const reloadErrors = []
+          if (niv.error) reloadErrors.push("niveaux")
+          if (mat.error) reloadErrors.push("matières")
+          if (thm.error) reloadErrors.push("thématiques")
+          if (cmp.error) reloadErrors.push("compétences")
+          if (sc.error) reloadErrors.push("sous-compétences")
+          
+          if (reloadErrors.length > 0) {
+            console.warn("Some data failed to reload:", reloadErrors)
+            alert(`Sauvegarde réussie, mais erreur lors du rechargement des données: ${reloadErrors.join(", ")}`)
+          }
+          
+          setNiveaux(niv.data || [])
+          setMatieres(mat.data || [])
+          setThematiques(thm.data || [])
+          setCompetences(cmp.data || [])
+          setSousCompetences(sc.data || [])
+          
+          // Show success message
+          const action = editingItem ? "modifié" : "créé"
+          const itemType = activeTabInfo?.label.slice(0, -1).toLowerCase() || "élément"
+          alert(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} ${action} avec succès!`)
+          
+        } catch (reloadError) {
+          console.error("Error reloading data:", reloadError)
+          alert("Sauvegarde réussie, mais erreur lors du rechargement des données. Veuillez actualiser la page.")
+        }
+      } else {
+        console.error("Save failed:", response.error)
+        const errorMessage = response.error || "Erreur inconnue"
+        alert(`Erreur lors de la sauvegarde:\n${errorMessage}`)
+        return // Don't close dialog on error
+      }
+      
+      setShowAddDialog(false)
+      setFormData({})
+      setEditingItem(null)
+    } catch (error) {
+      console.error("Error saving:", error)
+      const errorMessage = error instanceof Error ? error.message : "Erreur inconnue"
+      alert(`Erreur lors de la sauvegarde:\n${errorMessage}`)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (confirm("Êtes-vous sûr de vouloir supprimer cet élément ?")) {
-      console.log("Deleting:", activeTab, id)
-      // Here you would typically delete from your backend
+      setLoading(true)
+      try {
+        let response
+        switch (activeTab) {
+          case "niveaux":
+            response = await api.deleteNiveau(id)
+            break
+          case "matieres":
+            response = await api.deleteMatiere(id)
+            break
+          case "thematiques":
+            response = await api.deleteThematique(id)
+            break
+          case "competences":
+            response = await api.deleteCompetence(id)
+            break
+          case "sous-competences":
+            response = await api.deleteSousCompetence(id)
+            break
+          default:
+            console.log("Deleting:", activeTab, id)
+            break
+        }
+        
+        if (response?.error === undefined) {
+          // Reload data after successful delete
+          try {
+            const [niv, mat, thm, cmp, sc] = await Promise.all([
+              api.getNiveaux(),
+              api.getMatieres(),
+              api.getThematiques(),
+              api.getCompetences(),
+              api.getSousCompetences(),
+            ])
+            
+            // Check if any reload failed
+            const reloadErrors = []
+            if (niv.error) reloadErrors.push("niveaux")
+            if (mat.error) reloadErrors.push("matières")
+            if (thm.error) reloadErrors.push("thématiques")
+            if (cmp.error) reloadErrors.push("compétences")
+            if (sc.error) reloadErrors.push("sous-compétences")
+            
+            if (reloadErrors.length > 0) {
+              console.warn("Some data failed to reload after delete:", reloadErrors)
+              alert(`Suppression réussie, mais erreur lors du rechargement des données: ${reloadErrors.join(", ")}`)
+            }
+            
+            setNiveaux(niv.data || [])
+            setMatieres(mat.data || [])
+            setThematiques(thm.data || [])
+            setCompetences(cmp.data || [])
+            setSousCompetences(sc.data || [])
+            
+            // Show success message
+            alert("Élément supprimé avec succès!")
+            
+          } catch (reloadError) {
+            console.error("Error reloading data after delete:", reloadError)
+            alert("Suppression réussie, mais erreur lors du rechargement des données. Veuillez actualiser la page.")
+          }
+        } else {
+          console.error("Delete failed:", response.error)
+          const errorMessage = response.error || "Erreur inconnue"
+          alert(`Erreur lors de la suppression:\n${errorMessage}`)
+        }
+      } catch (error) {
+        console.error("Error deleting:", error)
+        const errorMessage = error instanceof Error ? error.message : "Erreur inconnue"
+        alert(`Erreur lors de la suppression:\n${errorMessage}`)
+      } finally {
+        setLoading(false)
+      }
     }
   }
 
@@ -187,6 +443,31 @@ export default function GestionDashboard() {
           </>
         )
 
+      case "matieres":
+        return (
+          <>
+            <div className="grid gap-2">
+              <Label htmlFor="nom">Nom de la matière</Label>
+              <Input
+                id="nom"
+                value={formData.nom || ""}
+                onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
+                placeholder="Ex: Mathématiques, Français..."
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={formData.description || ""}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Description de la matière..."
+                rows={3}
+              />
+            </div>
+          </>
+        )
+
       case "thematiques":
         return (
           <>
@@ -197,38 +478,30 @@ export default function GestionDashboard() {
                 value={formData.nom || ""}
                 onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
                 placeholder="Ex: Calcul mental, Grammaire..."
+                required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description || ""}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Description de la thématique..."
-                rows={3}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="niveau">Niveau</Label>
+              <Label htmlFor="id_matiere">Matière *</Label>
               <Select
-                value={formData.niveau_id?.toString() || ""}
+                value={formData.id_matiere?.toString() || ""}
                 onValueChange={(value) => {
-                  const niveau = niveaux.find((n) => n.id.toString() === value)
+                  const matiere = matieres.find((m) => m.id.toString() === value)
                   setFormData({
                     ...formData,
-                    niveau_id: Number.parseInt(value),
-                    niveau_nom: niveau?.nom,
+                    id_matiere: Number.parseInt(value),
+                    matiere_nom: matiere?.nom,
                   })
                 }}
+                required
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner un niveau" />
+                  <SelectValue placeholder="Sélectionner une matière" />
                 </SelectTrigger>
                 <SelectContent>
-                  {niveaux.map((niveau) => (
-                    <SelectItem key={niveau.id} value={niveau.id.toString()}>
-                      {niveau.nom}
+                  {matieres.map((matiere) => (
+                    <SelectItem key={matiere.id} value={matiere.id.toString()}>
+                      {matiere.nom}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -241,36 +514,29 @@ export default function GestionDashboard() {
         return (
           <>
             <div className="grid gap-2">
-              <Label htmlFor="nom">Nom de la compétence</Label>
-              <Input
-                id="nom"
-                value={formData.nom || ""}
-                onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                placeholder="Ex: Addition simple..."
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">Description de la compétence *</Label>
               <Textarea
                 id="description"
                 value={formData.description || ""}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Description de la compétence..."
+                placeholder="Ex: Addition simple, Calcul mental jusqu'à 20..."
                 rows={3}
+                required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="thematique">Thématique</Label>
+              <Label htmlFor="id_thematique">Thématique *</Label>
               <Select
-                value={formData.thematique_id?.toString() || ""}
+                value={formData.id_thematique?.toString() || ""}
                 onValueChange={(value) => {
                   const thematique = thematiques.find((t) => t.id.toString() === value)
                   setFormData({
                     ...formData,
-                    thematique_id: Number.parseInt(value),
+                    id_thematique: Number.parseInt(value),
                     thematique_nom: thematique?.nom,
                   })
                 }}
+                required
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionner une thématique" />
@@ -291,38 +557,31 @@ export default function GestionDashboard() {
         return (
           <>
             <div className="grid gap-2">
-              <Label htmlFor="nom">Nom de la sous-compétence</Label>
-              <Input
-                id="nom"
-                value={formData.nom || ""}
-                onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                placeholder="Ex: Addition jusqu'à 10..."
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">Description de la sous-compétence *</Label>
               <Textarea
                 id="description"
                 value={formData.description || ""}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Description de la sous-compétence..."
+                placeholder="Ex: Addition jusqu'à 10, Multiplication par 2..."
                 rows={3}
+                required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="competence">Compétence</Label>
+              <Label htmlFor="id_competence">Compétence *</Label>
               <Select
-                value={formData.competence_id?.toString() || ""}
+                value={formData.id_competence?.toString() || ""}
                 onValueChange={(value) => {
                   const competence = competences.find((c) => c.id.toString() === value)
-                  const themNom = competence ? (thematiqueIdToNom.get(competence.thematique) || String(competence.thematique)) : ""
+                  const themNom = competence ? (thematiqueIdToNom.get(competence.id_thematique) || String(competence.id_thematique)) : ""
                   setFormData({
                     ...formData,
-                    competence_id: Number.parseInt(value),
-                    competence_nom: competence?.titre,
+                    id_competence: Number.parseInt(value),
+                    competence_nom: competence?.description,
                     thematique_nom: themNom,
                   })
                 }}
+                required
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionner une compétence" />
@@ -330,7 +589,7 @@ export default function GestionDashboard() {
                 <SelectContent>
                   {competences.map((competence) => (
                     <SelectItem key={competence.id} value={competence.id.toString()}>
-                      {competence.titre}
+                      {competence.description}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -353,6 +612,13 @@ export default function GestionDashboard() {
             <TableHead>Description</TableHead>
           </>
         )
+      case "matieres":
+        return (
+          <>
+            <TableHead>Nom</TableHead>
+            <TableHead>Description</TableHead>
+          </>
+        )
       case "thematiques":
         return (
           <>
@@ -363,16 +629,13 @@ export default function GestionDashboard() {
       case "competences":
         return (
           <>
-            <TableHead>Nom</TableHead>
             <TableHead>Description</TableHead>
             <TableHead>Thématique</TableHead>
-            <TableHead>Niveau</TableHead>
           </>
         )
       case "sous-competences":
         return (
           <>
-            <TableHead>Nom</TableHead>
             <TableHead>Description</TableHead>
             <TableHead>Compétence</TableHead>
             <TableHead>Thématique</TableHead>
@@ -392,6 +655,13 @@ export default function GestionDashboard() {
             <TableCell className="max-w-xs truncate">{item.description}</TableCell>
           </>
         )
+      case "matieres":
+        return (
+          <>
+            <TableCell className="font-medium">{item.nom}</TableCell>
+            <TableCell className="max-w-xs truncate">{item.description}</TableCell>
+          </>
+        )
       case "thematiques":
         return (
           <>
@@ -404,21 +674,16 @@ export default function GestionDashboard() {
       case "competences":
         return (
           <>
-            <TableCell className="font-medium">{item.nom}</TableCell>
-            <TableCell className="max-w-xs truncate">{item.description}</TableCell>
+            <TableCell className="font-medium max-w-xs truncate">{item.description}</TableCell>
             <TableCell>
               <Badge variant="secondary">{item.thematique_nom}</Badge>
-            </TableCell>
-            <TableCell>
-              <Badge variant="outline">{item.niveau_nom}</Badge>
             </TableCell>
           </>
         )
       case "sous-competences":
         return (
           <>
-            <TableCell className="font-medium">{item.nom}</TableCell>
-            <TableCell className="max-w-xs truncate">{item.description}</TableCell>
+            <TableCell className="font-medium max-w-xs truncate">{item.description}</TableCell>
             <TableCell>
               <Badge variant="secondary">{item.competence_nom}</Badge>
             </TableCell>
@@ -442,7 +707,7 @@ export default function GestionDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           {tabs.map((tab) => {
             const Icon = tab.icon
             return (

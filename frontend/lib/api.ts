@@ -20,69 +20,161 @@ async function apiCall<T>(
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      let details = ''
+      try {
+        const contentType = response.headers.get('content-type') || ''
+        if (contentType.includes('application/json')) {
+          const json = await response.json()
+          details = (json && (json.detail || json.error || JSON.stringify(json))) || ''
+        } else {
+          details = await response.text()
+        }
+      } catch {}
+
+      const baseMsg = `Erreur HTTP ${response.status}: ${response.statusText}`
+      const message = details ? `${baseMsg} - ${details}` : baseMsg
+      throw new Error(message)
+    }
+
+    // For DELETE requests, the response might be empty (204 No Content)
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return { data: undefined as T };
     }
 
     const data = await response.json();
     return { data };
   } catch (error) {
     console.error('API call failed:', error);
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
+    return { error: error instanceof Error ? error.message : 'Erreur inconnue' };
   }
 }
 
 // API functions for different models
 export const api = {
   // Niveaux
-  getNiveaux: () => apiCall<any[]>('niveaux/'),
+  getNiveaux: () => apiCall<Niveau[]>('niveaux/'),
+  createNiveau: (data: Partial<Niveau>) => 
+    apiCall<Niveau>('niveaux/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateNiveau: (id: number, data: Partial<Niveau>) => 
+    apiCall<Niveau>(`niveaux/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteNiveau: (id: number) => 
+    apiCall<void>(`niveaux/${id}/`, {
+      method: 'DELETE',
+    }),
   
   // Matieres
-  getMatieres: () => apiCall<any[]>('matieres/'),
+  getMatieres: () => apiCall<Matiere[]>('matieres/'),
+  createMatiere: (data: Partial<Matiere>) => 
+    apiCall<Matiere>('matieres/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateMatiere: (id: number, data: Partial<Matiere>) => 
+    apiCall<Matiere>(`matieres/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteMatiere: (id: number) => 
+    apiCall<void>(`matieres/${id}/`, {
+      method: 'DELETE',
+    }),
   
   // Thematiques
-  getThematiques: () => apiCall<any[]>('thematiques/'),
+  getThematiques: () => apiCall<Thematique[]>('thematiques/'),
   getThematiquesByMatiere: (matiereId: number) => 
-    apiCall<any[]>(`thematiques/?matiere=${matiereId}`),
+    apiCall<Thematique[]>(`thematiques/?id_matiere=${matiereId}`),
+  createThematique: (data: Partial<Thematique>) => 
+    apiCall<Thematique>('thematiques/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateThematique: (id: number, data: Partial<Thematique>) => 
+    apiCall<Thematique>(`thematiques/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteThematique: (id: number) => 
+    apiCall<void>(`thematiques/${id}/`, {
+      method: 'DELETE',
+    }),
   
   // Competences
-  getCompetences: () => apiCall<any[]>('competences/'),
+  getCompetences: () => apiCall<Competence[]>('competences/'),
   getCompetencesByThematique: (thematiqueId: number) => 
-    apiCall<any[]>(`competences/?thematique=${thematiqueId}`),
-  getCompetencesByNiveau: (niveauId: number) => 
-    apiCall<any[]>(`competences/?niveau=${niveauId}`),
+    apiCall<Competence[]>(`competences/?id_thematique=${thematiqueId}`),
+  createCompetence: (data: Partial<Competence>) => 
+    apiCall<Competence>('competences/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCompetence: (id: number, data: Partial<Competence>) => 
+    apiCall<Competence>(`competences/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteCompetence: (id: number) => 
+    apiCall<void>(`competences/${id}/`, {
+      method: 'DELETE',
+    }),
   
   // Sous-competences
-  getSousCompetences: () => apiCall<any[]>('sous-competences/'),
+  getSousCompetences: () => apiCall<SousCompetence[]>('sous-competences/'),
   getSousCompetencesByCompetence: (competenceId: number) => 
-    apiCall<any[]>(`sous-competences/?competence=${competenceId}`),
+    apiCall<SousCompetence[]>(`sous-competences/?id_competence=${competenceId}`),
+  createSousCompetence: (data: Partial<SousCompetence>) => 
+    apiCall<SousCompetence>('sous-competences/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSousCompetence: (id: number, data: Partial<SousCompetence>) => 
+    apiCall<SousCompetence>(`sous-competences/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteSousCompetence: (id: number) => 
+    apiCall<void>(`sous-competences/${id}/`, {
+      method: 'DELETE',
+    }),
   
   // Questions
-  getQuestions: () => apiCall<any[]>('questions/'),
+  getQuestions: () => apiCall<Question[]>('questions/'),
   getQuestionsByCompetence: (competenceId: number) => 
-    apiCall<any[]>(`questions/?competence=${competenceId}`),
-  getQuestionsByStatut: (statut: string) => 
-    apiCall<any[]>(`questions/?statut=${statut}`),
-  createQuestion: (data: any) => 
-    apiCall<any>('questions/', {
+    apiCall<Question[]>(`questions/competence/${competenceId}/`),
+  getQuestionsByThematique: (thematiqueId: number) => 
+    apiCall<Question[]>(`questions/thematique/${thematiqueId}/`),
+  createQuestion: (data: Partial<Question>) => 
+    apiCall<Question>('questions/', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  generateQuestion: (payload: GeneratePayload) =>
+    apiCall<GeneratedResult>('generate/question/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Local LLM (ctransformers)
+  generateLocal: (payload: { prompt: string; max_new_tokens?: number; temperature?: number; top_p?: number }) =>
+    apiCall<{ text: string }>('generate/local/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   
-  // Generations
-  getGenerations: () => apiCall<any[]>('generations/'),
-  getGeneration: (id: number) => apiCall<any>(`generations/${id}/`),
-  createGeneration: (data: any) => 
-    apiCall<any>('generate/', {
+  // Reponses
+  getReponses: () => apiCall<Reponse[]>('reponses/'),
+  getReponsesByQuestion: (questionId: number) => 
+    apiCall<Reponse[]>(`reponses/?id_question=${questionId}`),
+  createReponse: (data: Partial<Reponse>) => 
+    apiCall<Reponse>('reponses/', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  
-  // Quiz
-  getQuiz: () => apiCall<any[]>('quiz/'),
-  getQuizById: (id: number) => apiCall<any>(`quiz/${id}/`),
-  
-  // Prompt Templates
-  getPromptTemplates: () => apiCall<any[]>('prompt-templates/'),
 };
 
 // Types for the data models
@@ -99,61 +191,52 @@ export interface Matiere {
 export interface Thematique {
   id: number;
   nom: string;
-  matiere: number;
+  id_matiere: number;
 }
 
 export interface Competence {
   id: number;
-  titre: string;
   description: string;
-  thematique: number;
-  niveau: number;
+  id_thematique: number;
 }
 
 export interface SousCompetence {
   id: number;
-  titre: string;
   description: string;
-  competence: number;
+  id_competence: number;
 }
 
 export interface Question {
   id: number;
-  texte: string;
-  format: string;
-  difficulte: string;
-  source: string;
-  competence: number | null;
-  sous_competence: number | null;
-  statut: 'draft' | 'generated' | 'validated' | 'archived';
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Generation {
-  id: number;
-  competence: number | null;
-  sous_competence: number | null;
-  prompt: string;
-  model: string;
-  params: any;
-  output_text: string;
-  score_quality: number | null;
-  statut: 'pending' | 'running' | 'done' | 'error';
-  created_at: string;
-  finished_at: string | null;
-}
-
-export interface Quiz {
-  id: number;
-  titre: string;
   description: string;
-  created_at: string;
+  type: string;
+  reponses?: Reponse[];
 }
 
-export interface PromptTemplate {
+export interface Reponse {
   id: number;
-  nom: string;
-  contenu: string;
-  created_at: string;
+  valide: boolean;
+  description: string;
+  id_question: number;
+}
+
+export interface GeneratePayload {
+  niveau_id: number;
+  thematique_id: number;
+  competence_id: number;
+  sous_competence_id?: number;
+  format: 'quiz' | 'true-false' | 'question';
+  difficulte: 'easy' | 'medium' | 'hard';
+}
+
+export interface GeneratedResult {
+  question: Question;
+  reponses: Reponse[];
+  meta: {
+    niveau: string;
+    thematique: string;
+    competence: string;
+    sous_competence?: string;
+    difficulte: string;
+  };
 }
