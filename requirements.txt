@@ -1,0 +1,11 @@
+Django>=5.0,<6.0
+djangorestframework>=3.14,<4.0
+celery>=5.3,<6.0
+requests>=2.31,<3.0
+python-dotenv>=1.0,<2.0
+django-cors-headers>=4.3,<5.0 
+psycopg2-binary 
+ctransformers>=0.2.27
+fastapi>=0.104.0
+uvicorn>=0.24.0
+langchain>=0.1.0
